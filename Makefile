@@ -131,7 +131,7 @@ dev-up:
 	@echo "=========================================="
 	@echo "  Starting Docker services"
 	@echo "=========================================="
-	cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env up -d --build
+	$(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env up -d --build
 
 # Wait for all services to be healthy
 wait-healthy:
@@ -140,7 +140,7 @@ wait-healthy:
 	@echo "=========================================="
 	@timeout=180; \
 	while [ $$timeout -gt 0 ]; do \
-		if cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env ps --format "table {{.Service}}\t{{.Status}}" 2>/dev/null | grep -q "unhealthy\|starting"; then \
+		if $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env ps --format "table {{.Service}}\t{{.Status}}" 2>/dev/null | grep -q "unhealthy\|starting"; then \
 			echo "Waiting for services to be healthy... ($$timeout s)"; \
 			sleep 5; \
 			timeout=$$((timeout - 5)); \
@@ -150,7 +150,7 @@ wait-healthy:
 	done; \
 	if [ $$timeout -le 0 ]; then \
 		echo "Timeout waiting for services to become healthy"; \
-		cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env ps; \
+		$(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env ps; \
 		exit 1; \
 	fi; \
 	echo "All services are healthy!"
@@ -164,15 +164,15 @@ init-tenant:
 
 # Stop all Docker services
 dev-down:
-	cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env down --remove-orphans
+	$(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env down --remove-orphans
 
 # View logs
 dev-logs:
-	cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env logs -f
+	$(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env logs -f
 
 # Show service status
 dev-ps:
-	cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env ps
+	$(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env ps
 
 # Restart services
 dev-restart: dev-down dev-up wait-healthy
@@ -191,4 +191,4 @@ setup-wizard:
 
 # Full clean
 clean: frontend-clean
-	cd $(BACKEND_DEV_DIR) && $(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) --env-file .env down -v --remove-orphans 2>/dev/null || true
+	$(SUDO) docker compose -p $(COMPOSE_PROJECT_NAME) -f $(BACKEND_DEV_DIR)/docker-compose.yml --env-file $(BACKEND_DEV_DIR)/.env down -v --remove-orphans 2>/dev/null || true

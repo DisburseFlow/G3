@@ -198,7 +198,143 @@ cd backend/dev && docker compose -p sdp-testnet --env-file .env exec db psql -U 
 psql -h localhost -U postgres -d sdp_mtn
 ```
 
-## Troubleshooting
+## Migration System & Common Issues
+
+### How Migrations Work
+
+The SDP uses a multi-stage migration system executed automatically during `make setup`:
+
+1. **Admin migrations** - Core admin tables
+2. **TSS migrations** - Transaction Submission Service tables (including `channel_accounts`)
+3. **Auth migrations** - Authentication tables
+4. **SDP migrations** - Core business logic tables
+4. **Setup-for-network** - Network-specific data (assets, wallets)
+
+Migrations are run automatically by the API container startup command:
+```bash
+sleep 5
+./stellar-disbursement-platform db admin migrate up
+./stellar-disbursement-platform db tss migrate up
+./stellar-disbursement-platform db auth migrate up --all
+./stellar-disbursement-platform db sdp migrate up --all
+./stellar-disbursement-platform db setup-for-network --all
+```
+
+The TSS service depends on the API being healthy, ensuring migrations complete before TSS starts.
+
+### Common Migration Issues & Fixes
+
+#### Issue 1: "relation 'channel_accounts' does not exist"
+
+**Error:** TSS fails with `pq: relation "channel_accounts" does not exist`
+
+**Root Cause:** TSS started before API migrations completed. The `channel_accounts` table is created by TSS migrations.
+
+**Fix:** The TSS service now depends on API being healthy (`depends_on: sdp-api: condition: service_healthy`). If you encounter this:
+```bash
+# Restart services to ensure correct order
+make dev-down
+make dev-up
+wait-healthy
+```
+
+#### Issue 2: "dial tcp [::1]:5432: connect: connection refused"
+
+**Error:** API cannot connect to PostgreSQL at startup.
+
+**Root Cause:** API container tries to connect before PostgreSQL is ready, or DATABASE_URL points to localhost instead of Docker service name.
+
+**Fix:** 
+1. Ensure `.env` has correct DATABASE_URL: `postgres://postgres@db:5432/sdp_mtn?sslmode=disable`
+2. Database has health check with `start_period: 30s`
+3. API depends on DB with `condition: service_healthy`
+
+#### Issue 3: "invalid private key, make sure your private key is generated with a curve at least as strong as prime256v1"
+
+**Error:** API fails to start with EC256 private key error.
+
+**Root Cause:** The default EC256_PRIVATE_KEY in docker-compose-sdp.yml was using invalid PEM format.
+
+**Fix:** The `.env.example` and `.env` now include a valid prime256v1 EC key. If you need to regenerate:
+```bash
+openssl ecparam -genkey -name prime256v1 -noout -out ec_private_key.pem
+cat ec_private_key.pem | sed ':a;N;s/\n/\\n/g;ta'  # Escape newlines for .env
+```
+
+#### Issue 4: "relation 'channel_accounts' does not exist" during TSS startup
+
+**Error:** TSS logs show `pq: relation "channel_accounts" does not exist at character 33`
+
+**Root Cause:** TSS started before API migrations created the table.
+
+**Fix:** TSS now depends on API health check. The API health check uses `/app-config` endpoint which only returns 200 after migrations complete.
+
+#### Issue 5: Health check fails with "curl: not found"
+
+**Error:** Health check fails with `/bin/sh: curl: not found`
+
+**Fix:** Added `curl` to the API development Dockerfile. If you rebuild the API image:
+```bash
+make clean
+make setup
+```
+
+### How to Rebuild After Changes
+
+#### Frontend Changes
+```bash
+# After modifying frontend/src/
+make frontend-build dev-up wait-healthy
+```
+
+#### Backend Changes
+```bash
+# Full rebuild
+make clean
+make setup
+
+# Or just rebuild API
+cd backend/dev && docker compose -p sdp-testnet --env-file .env build sdp-api
+make dev-up wait-healthy
+```
+
+#### Database Schema Changes (Adding Migrations)
+```bash
+# 1. Create migration files in backend/db/migrations/
+# 2. Rebuild and restart
+make clean
+make setup
+```
+
+#### Database Connection Refused
+
+Ensure PostgreSQL is healthy:
+```bash
+cd backend/dev && docker compose -p sdp-testnet --env-file .env ps db
+# Should show "healthy"
+```
+
+### Tenant Initialization Fails
+
+Re-run init script manually:
+```bash
+cd backend/dev && ./init-tenant.sh
+```
+
+### Reset Everything
+
+```bash
+make clean
+# Then re-run
+make setup
+```
+
+### Frontend Changes Not Reflecting
+
+```bash
+# Force rebuild without cache
+make frontend-build dev-up wait-healthy
+```
 
 ### Port Conflicts
 
@@ -210,13 +346,6 @@ kill -9 <PID>
 
 # Or stop other SDP projects
 make dev-down
-```
-
-### Frontend Changes Not Reflecting
-
-```bash
-# Force rebuild without cache
-make frontend-build dev-up wait-healthy
 ```
 
 ### Database Connection Refused
